@@ -11,36 +11,59 @@
 
 global_variable bool running;
 global_variable SDL_Texture *texture;
-global_variable void *pixels;
-global_variable int textureWidth;
+global_variable void *bitmapMemory;
+global_variable int bitmapWidth;
+global_variable int bitmapHeight;
+global_variable int bytesPerPixel = 4;
+
+void renderWierdGradient(int xOffset, int yOffset) {
+  int pitch = bitmapWidth * bytesPerPixel;
+  uint8_t *row = (uint8_t *)bitmapMemory;
+
+  for (int Y = 0; Y < bitmapHeight; Y++) {
+    uint32_t *pixel = (uint32_t*)row;
+    for (int X = 0; X < bitmapWidth; X++) {
+      uint8_t blue = X + xOffset;
+      uint8_t green = Y + yOffset;
+      uint8_t red = 0;
+      uint8_t alpha = 255; // opacity
+
+      // Construct 0xAARRGGBB -> memory on little-endian becomes [BB][GG][RR][AA]
+      *pixel++ = ((alpha << 24)| (red << 16) | (green << 8) | blue); 
+    } 
+   row += pitch; 
+  }
+}
 
 void SDL_ResizeTexture(SDL_Renderer *renderer, SDL_Window *window) {
   if (texture) {
     SDL_DestroyTexture(texture);
   }
 
-  if (pixels) {
-    free(pixels);
+  if (bitmapMemory) {
+    free(bitmapMemory);
   }
 
   int width;
   int height;
   SDL_GetWindowSize(window, &width, &height);
 
-  SDL_Texture* texture = SDL_CreateTexture(
+  texture = SDL_CreateTexture(
     renderer,
     SDL_PIXELFORMAT_ARGB8888,
     SDL_TEXTUREACCESS_STREAMING,
     width,
     height
   );
-  textureWidth = width;
 
-  void *pixels = malloc(width * height * 4);
+  bitmapWidth = width;
+  bitmapHeight = height;
+
+  bitmapMemory = malloc(width * height * bytesPerPixel);
 }
 
 void SDL_UpdateWindow(SDL_Renderer *renderer) {
-  if (SDL_UpdateTexture(texture, 0, pixels, textureWidth * 4)) {
+  if (SDL_UpdateTexture(texture, 0, bitmapMemory, bitmapWidth * bytesPerPixel) != 1) {
     SDL_LogError(
       SDL_LOG_CATEGORY_ERROR,
       "Could not update texture: %s\n",
@@ -49,8 +72,6 @@ void SDL_UpdateWindow(SDL_Renderer *renderer) {
   } 
 
   SDL_RenderTexture(renderer, texture, 0, 0);
-  SDL_SetRenderDrawColor(renderer,  255, 0, 250, 0);
-  SDL_RenderClear(renderer);
   SDL_RenderPresent(renderer);
 }
 
@@ -61,8 +82,6 @@ int main(int argc, char* argv[]) {
   window = SDL_CreateWindow("An SDL3 window", 640, 480, SDL_WINDOW_EXTERNAL);
 
   SDL_Renderer * renderer = SDL_CreateRenderer(window, 0);
-  SDL_SetRenderDrawColor(renderer,  255, 190, 10, 0);
-  SDL_RenderClear(renderer);
   SDL_RenderPresent(renderer);
 
   if (window == NULL) {
@@ -71,29 +90,20 @@ int main(int argc, char* argv[]) {
   }
 
   running = true;
+  int xOffset = 0;
+  int yOffset = 0;
+  SDL_ResizeTexture(renderer, window);
+
   while (running) {
     SDL_Event event;
-
     while (SDL_PollEvent(&event)) {
       switch(event.type) {
-        case SDL_EVENT_WINDOW_EXPOSED:
-          printf("EXPOSED\n");
-          SDL_UpdateWindow(renderer);
-          break;
         case SDL_EVENT_QUIT:
           running = false;
           break;
-        case SDL_EVENT_WINDOW_MOUSE_ENTER:
-          printf("FOCUS!\n");
-          SDL_SetRenderDrawColor(renderer, 111, 200, 100, 0);
-          SDL_RenderClear(renderer);
-          SDL_RenderPresent(renderer);
-          break;
-        case SDL_EVENT_WINDOW_MOUSE_LEAVE:
-          SDL_SetRenderDrawColor(renderer,  255, 190, 10, 0);
-          SDL_RenderClear(renderer);
-          SDL_RenderPresent(renderer);
-          printf("LOST FOCUS!\n");
+        case SDL_EVENT_WINDOW_EXPOSED:
+          printf("EXPOSED\n");
+          SDL_UpdateWindow(renderer);
           break;
         case SDL_EVENT_WINDOW_RESIZED: 
           printf("RESIZED SCREEN!\n");
@@ -104,6 +114,10 @@ int main(int argc, char* argv[]) {
           break;
       }
     }
+    renderWierdGradient(xOffset,0);
+    printf("OUTSIDE \n");
+    SDL_UpdateWindow(renderer);
+    xOffset++;
   }
 
   SDL_DestroyWindow(window);
